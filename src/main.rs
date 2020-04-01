@@ -2,42 +2,42 @@ use z3::ast::Ast;
 use z3::*;
 
 struct ConcolicInt <'a> {
-    value : i32 ,
-    symbolic_value : z3::ast::Int<'a> ,
+    value : i32,
+    symbolic_value : z3::ast::Int<'a>,
 }
 
 struct ConcolicBool <'a> {
-    value : bool ,
-    symbolic_value : z3 :: ast :: Bool<'a> ,
+    value : bool,
+    symbolic_value : z3 :: ast :: Bool<'a>,
 }
 
 impl<'a> ConcolicInt<'a> {
     fn New(ctx: &'a Context, value: i32 ) -> ConcolicInt<'a> {
-        ConcolicInt { value : value , symbolic_value : ast :: Int :: from_i64 (ctx , value as i64) }
+        ConcolicInt { value: value , symbolic_value: ast::Int::from_i64 (ctx , value as i64) }
     }
 
     fn NewConst(ctx: &'a Context, variable_name: &str, value: i32 ) -> ConcolicInt<'a> {
-        ConcolicInt { value : value , symbolic_value : ast::Int::new_const(&ctx, variable_name) }
+        ConcolicInt { value: value , symbolic_value: ast::Int::new_const(&ctx, variable_name) }
     }
 
-    fn add ( & self , input : &ConcolicInt<'a> ) -> ConcolicInt <'a> {
+    fn add (&self , input: &ConcolicInt<'a> ) -> ConcolicInt<'a> {
         ConcolicInt {
-            value : self . value + input . value ,
-            symbolic_value : self . symbolic_value . add ( &[&input . symbolic_value] ) ,
+            value: self.value + input.value,
+            symbolic_value: self.symbolic_value.add (&[&input.symbolic_value]),
         }
     }
 
-    fn eq ( & self , input : &ConcolicInt<'a> ) -> ConcolicBool<'a> {
+    fn eq (&self, input: &ConcolicInt<'a> ) -> ConcolicBool<'a> {
         ConcolicBool {
-            value : self . value == input . value ,
-            symbolic_value : self . symbolic_value . _eq ( &input . symbolic_value ) ,
+            value : self.value == input.value,
+            symbolic_value : self.symbolic_value._eq(&input.symbolic_value),
         }
     }
 
     fn mul(&self, input: &ConcolicInt<'a>) -> ConcolicInt <'a> {
         ConcolicInt {
-            value : self . value * input . value ,
-            symbolic_value : self . symbolic_value . mul ( &[&input . symbolic_value] ) ,
+            value : self.value * input.value,
+            symbolic_value : self.symbolic_value.mul(&[&input.symbolic_value]),
         }
     }
 }
@@ -45,8 +45,8 @@ impl<'a> ConcolicInt<'a> {
 impl<'a> ConcolicBool<'a> {
     fn not(&self) -> ConcolicBool<'a> {
         ConcolicBool {
-            value : self . value,
-            symbolic_value : self . symbolic_value . not (),
+            value : self.value,
+            symbolic_value: self.symbolic_value.not(),
         }
     }
 
@@ -88,7 +88,7 @@ fn concolic_find_input<'ctx, 'a>(solver: &z3::Solver, constraint: &ConcolicBool<
   }
 */
 
-fn test_me<'a, 'b>(ctx: &'a Context, currPathConstrsGlobal: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x : i32 , y : i32 ) {
+fn test_me<'a, 'b>(ctx: &'a Context, currPathConstrsGlobal: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x: i32 , y: i32) {
     let conc_x = ConcolicInt::NewConst(&ctx, "x", x);
     let conc_y = ConcolicInt::NewConst(&ctx, "y", y);
 
