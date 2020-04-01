@@ -2,18 +2,18 @@ use z3::ast::Ast;
 use z3::*;
 
 struct ConcolicInt <'a> {
-    value : i32,
-    symbolic_value : z3::ast::Int<'a>,
+    value: i32,
+    symbolic_value: z3::ast::Int<'a>,
 }
 
 struct ConcolicBool <'a> {
-    value : bool,
-    symbolic_value : z3 :: ast :: Bool<'a>,
+    value: bool,
+    symbolic_value : z3::ast::Bool<'a>,
 }
 
 impl<'a> ConcolicInt<'a> {
     fn New(ctx: &'a Context, value: i32 ) -> ConcolicInt<'a> {
-        ConcolicInt { value: value , symbolic_value: ast::Int::from_i64 (ctx , value as i64) }
+        ConcolicInt { value: value , symbolic_value: ast::Int::from_i64(ctx, value as i64) }
     }
 
     fn NewConst(ctx: &'a Context, variable_name: &str, value: i32 ) -> ConcolicInt<'a> {
@@ -80,34 +80,6 @@ fn concolic_find_input<'ctx, 'a>(solver: &z3::Solver, constraint: &ConcolicBool<
     return results;
 }
 
-/*
-  if 2 * x == y {
-    if y == x + 10 {
-      panic!
-    }
-  }
-*/
-
-fn test_me<'a, 'b>(ctx: &'a Context, constraints_path: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x: i32 , y: i32) {
-    let conc_x = ConcolicInt::NewConst(&ctx, "x", x);
-    let conc_y = ConcolicInt::NewConst(&ctx, "y", y);
-
-    if ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).value {
-        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y));
-        if conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).value {
-            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))));
-            panic!("this is a terrible mistake!");
-        } else {
-            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).not());
-        }
-    } else {
-        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).not());
-    }
-
-    variables.push(conc_x);
-    variables.push(conc_y);
-}
-
 fn generate_constraint<'a, 'b>(constraints: &'b Vec<ConcolicBool<'a>>) -> ConcolicBool<'a> {
     let constraint_len = constraints.len();
     let last_constraint = constraints.last().unwrap();
@@ -136,33 +108,75 @@ fn execute_concolic<'a, 'b>(solver: &z3::Solver,
     }
 }
 
+struct ConcolicMachine<'a> {
+    ctx: &'a Context,
+    constraints_path: Vec<ConcolicBool<'a>>,
+}
+
+impl<'a> ConcolicMachine<'a> {
+    fn execute(&mut self) {
+        let mut concolic_variables: Vec<ConcolicInt> = Vec::new();
+        let solver = Solver::new(&self.ctx);
+
+        test_me(&self.ctx, &mut self.constraints_path, &mut concolic_variables, 2, 2);
+        let concrete_input = concolic_find_input(&solver, &self.constraints_path.pop().unwrap(), &concolic_variables);
+        let mut inputs: Vec<Vec<i32>> = Vec::new();
+        let mut used_inputs: Vec<Vec<i32>> = Vec::new();
+
+        inputs.push(concrete_input);
+
+        for iterations in 0..100 {
+            self.constraints_path.clear();
+            concolic_variables.clear();
+
+            let current_input = inputs.pop().unwrap();
+            test_me(&self.ctx, &mut self.constraints_path, &mut concolic_variables, current_input[0], current_input[1]);
+
+            used_inputs.push(current_input);
+
+            let constraint = generate_constraint(&self.constraints_path);
+            execute_concolic(&solver, &constraint, &concolic_variables, &used_inputs, &mut inputs);
+
+            let neg_constraint = constraint.not();
+            execute_concolic(&solver, &neg_constraint, &concolic_variables, &used_inputs, &mut inputs);
+        }
+    }
+}
+
+/*
+  if 2 * x == y {
+    if y == x + 10 {
+      panic!
+    }
+  }
+*/
+
+fn test_me<'a, 'b>(ctx: &'a Context, constraints_path: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x: i32 , y: i32) {
+    let conc_x = ConcolicInt::NewConst(&ctx, "x", x);
+    let conc_y = ConcolicInt::NewConst(&ctx, "y", y);
+
+    if ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).value {
+        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y));
+        if conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).value {
+            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))));
+            panic!("this is a terrible mistake!");
+        } else {
+            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).not());
+        }
+    } else {
+        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).not());
+    }
+
+    variables.push(conc_x);
+    variables.push(conc_y);
+}
+
 fn main() {
     let cfg = Config::new();
-    let ctx = Context::new(&cfg);
-    let solver = Solver::new(&ctx);
-    let mut constraints_path: Vec<ConcolicBool> = Vec::new();
-    let mut concolic_variables: Vec<ConcolicInt> = Vec::new();
+    let mut conc_machine = ConcolicMachine {
+        ctx: &Context::new(&cfg),
+        constraints_path: Vec::new()
+    };
 
-    test_me(&ctx, &mut constraints_path, &mut concolic_variables, 2, 2);
-    let concrete_input = concolic_find_input(&solver, &constraints_path.pop().unwrap(), &concolic_variables);
-    let mut inputs: Vec<Vec<i32>> = Vec::new();
-    let mut used_inputs: Vec<Vec<i32>> = Vec::new();
-
-    inputs.push(concrete_input);
-
-    for iterations in 0..100 {
-        constraints_path.clear();
-        concolic_variables.clear();
-
-        let current_input = inputs.pop().unwrap();
-        test_me(&ctx, &mut constraints_path, &mut concolic_variables, current_input[0], current_input[1]);
-
-        used_inputs.push(current_input);
-
-        let constraint= generate_constraint(&constraints_path);
-        execute_concolic(&solver, &constraint, &concolic_variables, &used_inputs, &mut inputs);
-
-        let neg_constraint = constraint.not();
-        execute_concolic(&solver, &neg_constraint, &concolic_variables, &used_inputs, &mut inputs);
-    }
+    conc_machine.execute();
 }
