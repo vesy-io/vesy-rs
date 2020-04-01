@@ -88,20 +88,20 @@ fn concolic_find_input<'ctx, 'a>(solver: &z3::Solver, constraint: &ConcolicBool<
   }
 */
 
-fn test_me<'a, 'b>(ctx: &'a Context, currPathConstrsGlobal: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x: i32 , y: i32) {
+fn test_me<'a, 'b>(ctx: &'a Context, constraints_path: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x: i32 , y: i32) {
     let conc_x = ConcolicInt::NewConst(&ctx, "x", x);
     let conc_y = ConcolicInt::NewConst(&ctx, "y", y);
 
     if ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).value {
-        currPathConstrsGlobal.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y));
+        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y));
         if conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).value {
-            currPathConstrsGlobal.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))));
+            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))));
             panic!("this is a terrible mistake!");
         } else {
-            currPathConstrsGlobal.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).not());
+            constraints_path.push(conc_y.eq(&conc_x.add(&ConcolicInt::New(&ctx,10))).not());
         }
     } else {
-        currPathConstrsGlobal.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).not());
+        constraints_path.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).not());
     }
 
     variables.push(conc_x);
@@ -140,29 +140,29 @@ fn main() {
     let cfg = Config::new();
     let ctx = Context::new(&cfg);
     let solver = Solver::new(&ctx);
-    let mut currPathConstrsGlobal: Vec<ConcolicBool> = Vec::new();
+    let mut constraints_path: Vec<ConcolicBool> = Vec::new();
     let mut concolic_variables: Vec<ConcolicInt> = Vec::new();
 
-    test_me(&ctx, &mut currPathConstrsGlobal, &mut concolic_variables, 2, 2);
-    let concrete_input = concolic_find_input(&solver, &currPathConstrsGlobal.pop().unwrap(), &concolic_variables);
+    test_me(&ctx, &mut constraints_path, &mut concolic_variables, 2, 2);
+    let concrete_input = concolic_find_input(&solver, &constraints_path.pop().unwrap(), &concolic_variables);
     let mut inputs: Vec<Vec<i32>> = Vec::new();
     let mut used_inputs: Vec<Vec<i32>> = Vec::new();
 
     inputs.push(concrete_input);
 
     for iterations in 0..100 {
-        currPathConstrsGlobal.clear();
+        constraints_path.clear();
         concolic_variables.clear();
 
         let current_input = inputs.pop().unwrap();
-        test_me(&ctx, &mut currPathConstrsGlobal, &mut concolic_variables, current_input[0], current_input[1]);
+        test_me(&ctx, &mut constraints_path, &mut concolic_variables, current_input[0], current_input[1]);
 
         used_inputs.push(current_input);
 
-        let constraint= generate_constraint(&currPathConstrsGlobal);
+        let constraint= generate_constraint(&constraints_path);
         execute_concolic(&solver, &constraint, &concolic_variables, &used_inputs, &mut inputs);
 
-        let neg_constraint = generate_constraint(&currPathConstrsGlobal).not();
+        let neg_constraint = constraint.not();
         execute_concolic(&solver, &neg_constraint, &concolic_variables, &used_inputs, &mut inputs);
     }
 }
