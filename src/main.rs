@@ -64,7 +64,6 @@ fn concolic_find_input<'ctx, 'a>(solver: &z3::Solver, constraint: &ConcolicBool<
     solver.push();
     solver.assert(&constraint.symbolic_value);
 
-    // println!("{:?}", constraint.symbolic_value);
     let solver_result = solver.check();
     let mut results: Vec<i32> = Vec::new();
 
@@ -82,14 +81,16 @@ fn concolic_find_input<'ctx, 'a>(solver: &z3::Solver, constraint: &ConcolicBool<
 }
 
 /*
-  if 2 * x == y:
-    if y == x + 10:
-      assert False
+  if 2 * x == y {
+    if y == x + 10 {
+      panic!
+    }
+  }
 */
 
 fn test_me<'a, 'b>(ctx: &'a Context, currPathConstrsGlobal: &'b mut Vec<ConcolicBool<'a>>, variables: &'b mut Vec<ConcolicInt<'a>>, x : i32 , y : i32 ) {
-    let conc_x = ConcolicInt::NewConst(&ctx, "x", x); //ConcolicInt::New ( &ctx, y ) ;
-    let conc_y = ConcolicInt::NewConst(&ctx, "y", y);//ConcolicInt::New ( &ctx, x ) ;
+    let conc_x = ConcolicInt::NewConst(&ctx, "x", x);
+    let conc_y = ConcolicInt::NewConst(&ctx, "y", y);
 
     if ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y).value {
         currPathConstrsGlobal.push(ConcolicInt::New(&ctx, 2).mul(&conc_x).eq(&conc_y));
@@ -105,6 +106,34 @@ fn test_me<'a, 'b>(ctx: &'a Context, currPathConstrsGlobal: &'b mut Vec<Concolic
 
     variables.push(conc_x);
     variables.push(conc_y);
+}
+
+fn generate_constraint<'a, 'b>(constraints: &'b Vec<ConcolicBool<'a>>) -> ConcolicBool<'a> {
+    let constraint_len = constraints.len();
+    let last_constraint = constraints.last().unwrap();
+
+    if constraint_len > 1 {
+        constraints[0].and(&constraints[1..constraint_len-1]).and(&[last_constraint.not()])
+    } else {
+        constraints[0].not().not()
+    }
+}
+
+fn execute_concolic<'a, 'b>(solver: &z3::Solver,
+                            constraint: &ConcolicBool<'a>,
+                            concolic_variables: &'b Vec<ConcolicInt<'a>>,
+                            used_inputs: &'b Vec<Vec<i32>>,
+                            inputs:&'b mut Vec<Vec<i32>>) {
+    let new_input = concolic_find_input(&solver, &constraint, &concolic_variables);
+
+    if new_input.len() > 0 {
+        let input_already_saved = inputs.iter().any(|v| ((v[0] == new_input[0]) && (v[1] == new_input[1])));
+        let input_already_used = used_inputs.iter().any(|v| ((v[0] == new_input[0]) && (v[1] == new_input[1])));
+
+        if !input_already_saved && !input_already_used {
+            inputs.push(new_input);
+        }
+    }
 }
 
 fn main() {
@@ -125,46 +154,15 @@ fn main() {
         currPathConstrsGlobal.clear();
         concolic_variables.clear();
 
-        let bar = inputs.pop().unwrap();
-        test_me(&ctx, &mut currPathConstrsGlobal, &mut concolic_variables, bar[0], bar[1]);
+        let current_input = inputs.pop().unwrap();
+        test_me(&ctx, &mut currPathConstrsGlobal, &mut concolic_variables, current_input[0], current_input[1]);
 
-        used_inputs.push(bar);
+        used_inputs.push(current_input);
 
-        let constraint_len = currPathConstrsGlobal.len();
-        let last_constraint = currPathConstrsGlobal.last().unwrap();
+        let constraint= generate_constraint(&currPathConstrsGlobal);
+        execute_concolic(&solver, &constraint, &concolic_variables, &used_inputs, &mut inputs);
 
-        let constraint =
-            if constraint_len > 1 {
-                currPathConstrsGlobal[0].and(&currPathConstrsGlobal[1..constraint_len-1]).and(&[last_constraint.not()])
-            } else {
-                currPathConstrsGlobal[0].not().not()
-            };
-        let temp_input = concolic_find_input(&solver, &constraint, &concolic_variables);
-
-        if temp_input.len() > 0 {
-            let foo = inputs.iter().any(|v| ((v[0] == temp_input[0]) && (v[1] == temp_input[1])));
-            let foo_used = used_inputs.iter().any(|v| ((v[0] == temp_input[0]) && (v[1] == temp_input[1])));
-
-            if !foo && !foo_used {
-                inputs.push(temp_input);
-            }
-        }
-
-        let neg_constraint =
-            if constraint_len > 1 {
-                currPathConstrsGlobal[0].and(&currPathConstrsGlobal[1..constraint_len-1]).and(&[last_constraint.not()]).not()
-            } else {
-                currPathConstrsGlobal[0].not()
-            };
-
-
-        let temp_input2 = concolic_find_input(&solver, &neg_constraint, &concolic_variables);
-        let foo2 = inputs.iter().any(|v| ((v[0] == temp_input2[0]) && (v[1] == temp_input2[1])));
-        let foo2_used = used_inputs.iter().any(|v| ((v[0] == temp_input2[0]) && (v[1] == temp_input2[1])));
-
-
-        if !foo2 && !foo2_used{
-            inputs.push(temp_input2);
-        }
+        let neg_constraint = generate_constraint(&currPathConstrsGlobal).not();
+        execute_concolic(&solver, &neg_constraint, &concolic_variables, &used_inputs, &mut inputs);
     }
 }
